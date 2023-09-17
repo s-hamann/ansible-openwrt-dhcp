@@ -1,0 +1,15 @@
+---
+dhcp_dnsmasq_default:
+  local: '/lan/'
+  domain: lan
+  readethers: true
+  leasefile: '/tmp/dhcp.leases'
+dhcp_odhcpd_default:
+  leasefile: '/tmp/hosts/odhcpd'
+  leasetrigger: '/usr/sbin/odhcpd-update'
+  loglevel: 4
+dhcp_package_conflicts:
+  dnsmasq: dnsmasq-full
+  dnsmasq-full: dnsmasq
+  odhcpd: odhcpd-ipv6only
+  odhcpd-ipv6only: odhcpd

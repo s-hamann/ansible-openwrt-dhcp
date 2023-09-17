@@ -1,0 +1,42 @@
+#jinja2: lstrip_blocks: True
+{{ ansible_managed | comment }}
+{% macro uci_block(uci_options) %}
+  {% for key, value in uci_options.items() if value != omit %}
+    {% if value is sequence and value is not string %}
+      {% for item in value %}
+	list {{ key }} '{{ item }}'
+      {% endfor %}
+    {% else %}
+	option {{ key }} '{% if value is boolean %}{{ value | ternary('1', '0') }}{% else %}{{ value }}{% endif %}'
+    {% endif %}
+  {% endfor %}
+{% endmacro %}
+
+config dnsmasq
+{{ uci_block(dhcp_dnsmasq_default | combine(dhcp_dnsmasq)) }}
+{% for name, options in dhcp_dnsmasq_instances %}
+config dnsmasq '{{ name }}'
+{{ uci_block(options) }}
+{% endfor %}
+config odhcpd 'odhcpd'
+{{ uci_block(dhcp_odhcpd_default | combine(dhcp_odhcpd)) }}
+{% for name, options in dhcp_pools.items() %}
+config dhcp '{{ name }}'
+{{ uci_block({'interface': name} | combine(options)) }}
+{% endfor %}
+{% for options in dhcp_static_leases %}
+config host
+{{ uci_block(options) }}
+{% endfor %}
+{% for options in dhcp_pxe %}
+config boot
+{{ uci_block(options) }}
+{% endfor %}
+{% for options in dhcp_ipsets %}
+config ipset
+{{ uci_block(options) }}
+{% endfor %}
+{% for name, options in dhcp_relays.items() %}
+config relay '{{ name }}'
+{{ uci_block(options) }}
+{% endfor %}

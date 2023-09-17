@@ -1,0 +1,25 @@
+---
+dhcp_dnsmasq: {}
+dhcp_dnsmasq_instances: {}
+dhcp_odhcpd: {}
+dhcp_pools:
+  wan:
+    ignore: true
+  lan:
+    start: 100
+    limit: 150
+    dhcpv4: server
+    dhcpv6: server
+    ra: server
+    ra_flags:
+      - managed-config
+      - other-config
+dhcp_static_leases: []
+dhcp_pxe: []
+dhcp_ipsets: []
+dhcp_relays: {}
+dhcp_dnsmasq_extra_options: {}
+dhcp_dnsmasq_package: dnsmasq
+dhcp_odhcpd_package: odhcpd-ipv6only
+dhcp_dnsmasq_enabled: true
+dhcp_odhcpd_enabled: true

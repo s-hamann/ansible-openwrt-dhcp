@@ -1,0 +1,10 @@
+#jinja2: lstrip_blocks: True
+{{ ansible_managed | comment }}
+{% for entry in dhcp_static_leases %}
+  {% if entry["mac"] | default('') is match('([0-9a-f]{2}:){5}[0-9a-f]{2}', ignorecase=true) and entry["ip"] is defined %}
+    {% if entry["name"] is defined %}
+# {{ entry["name"] }}
+    {% endif %}
+{{ entry["mac"] }} {{ entry["ip"] }}
+  {% endif %}
+{% endfor %}

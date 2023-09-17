@@ -1,0 +1,121 @@
+---
+- name: 'Select fully-featured Dnsmasq package'
+  ansible.builtin.set_fact:
+    dhcp_dnsmasq_package: dnsmasq-full
+  when: "dhcp_dnsmasq_enabled | bool and
+    not dhcp_odhcpd['maindhcp'] | default(false) | bool and
+    (
+    dhcp_dnsmasq['dnssec'] | default(false) | bool or
+    dhcp_dnsmasq['dnsseccheckunsigned'] | default(false) | bool or
+    dhcp_dnsmasq['ipset'] | default([]) | count > 0 or
+    dhcp_ipsets | count > 0
+    )"
+
+- name: 'Select fully-featured odhcpd package'
+  ansible.builtin.set_fact:
+    dhcp_odhcpd_package: odhcpd
+  when: "dhcp_odhcpd_enabled | bool and
+    dhcp_odhcpd['maindhcp'] | default(false) | bool and
+    dhcp_pools | dict2items | map(attribute='value') | map(attribute='dhcpv4') | select('defined') | select('==', 'server') | count > 0"
+
+- name: 'Deselect Dnsmasq package'
+  ansible.builtin.set_fact:
+    dhcp_dnsmasq_package: false
+  when: "not dhcp_dnsmasq_enabled | bool"
+
+- name: 'Deselect odhcpd package'
+  ansible.builtin.set_fact:
+    dhcp_odhcpd_package: false
+  when: "not dhcp_odhcpd_enabled | bool"
+
+# Moving between dnsmasq and dnsmasq-full is not trivial.
+# Both can not be installed at the same time, so we need to uninstall the
+# existing package first. That, however, breaks DNS resolution in the default
+# setup, which means we can not (easily) download the other package (or anything).
+# There are a number of ways around that problem.
+# We first download the new package, then remove the existing one and continue
+# to install the new one.
+# But first, check if we really need to do the Dnsmasq shuffle.
+
+- name: 'Check Dnsmasq needs to be replaced'
+  community.general.opkg:
+    name: "{{ dhcp_dnsmasq_package }}"
+    state: present
+  when: "dhcp_dnsmasq_package is ansible.builtin.truthy"
+  check_mode: true
+  register: _check_dnsmasq
+
+- name: 'Prepare for Dnsmasq shuffle'
+  when: "_check_dnsmasq is changed"
+  block:
+    - name: 'Create temporary package cache directory'
+      ansible.builtin.tempfile:
+        prefix: opkg-cache
+        state: directory
+      register: _dhcp_opkg_cache
+      notify: _dhcp_remove_opkg_cache
+
+    - name: 'Download {{ dhcp_dnsmasq_package }}'
+      ansible.builtin.command: "opkg --download-only install {{ dhcp_dnsmasq_package | quote }}"
+      args:
+        chdir: "{{ _dhcp_opkg_cache.path }}"
+      changed_when: false
+
+- name: 'Remove conflicting packages'
+  community.general.opkg:
+    name: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ dhcp_package_conflicts[dhcp_dnsmasq_package] if dhcp_dnsmasq_package else false }}"
+    - "{{ dhcp_package_conflicts[dhcp_odhcpd_package] if dhcp_odhcpd_package else false }}"
+  when: "item is ansible.builtin.truthy"
+
+- name: 'Install required packages'
+  ansible.builtin.command: "opkg {{ ('--cache ' ~ _dhcp_opkg_cache.path | quote) if _check_dnsmasq is changed else '' }} install {{ item | quote }}"
+  changed_when: "'Installing ' ~ item in _opkg_install.stdout"
+  register: _opkg_install
+  loop:
+    - "{{ dhcp_dnsmasq_package }}"
+    - "{{ dhcp_odhcpd_package }}"
+  when: "item is ansible.builtin.truthy"
+
+- name: 'Configure DHCP'
+  ansible.builtin.template:
+    dest: '/etc/config/dhcp'
+    src: 'dhcp.j2'
+    owner: root
+    group: root
+    mode: '0600'
+  notify:
+    - _dhcp_restart_dnsmasq
+    - _dhcp_restart_odhcpd
+
+- name: 'Configure Dnsmasq'
+  ansible.builtin.template:
+    dest: '/etc/dnsmasq.conf'
+    src: 'dnsmasq.conf.j2'
+    owner: root
+    group: root
+    mode: '0600'
+  notify: _dhcp_restart_dnsmasq
+
+- name: 'Set up static leases in /etc/ethers'
+  ansible.builtin.template:
+    dest: '/etc/ethers'
+    src: 'ethers.j2'
+    owner: root
+    group: root
+    mode: '0644'
+  notify: _dhcp_restart_dnsmasq
+
+- name: "{{ dhcp_dnsmasq_enabled | bool | ternary('Enable and start', 'Disable and stop') }} Dnsmasq"
+  ansible.builtin.service:
+    name: dnsmasq
+    enabled: "{{ dhcp_dnsmasq_enabled | bool }}"
+    state: "{{ ansible_facts['is_chroot'] | ternary(omit, dhcp_dnsmasq_enabled | bool | ternary('started', 'stopped')) }}"
+
+- name: "{{ dhcp_odhcpd_enabled | bool | ternary('Enable and start', 'Disable and stop') }} odhcpd"
+  ansible.builtin.service:
+    name: odhcpd
+    enabled: "{{ dhcp_odhcpd_enabled | bool }}"
+    state: "{{ ansible_facts['is_chroot'] | ternary(omit, dhcp_odhcpd_enabled | bool | ternary('started', 'stopped')) }}"

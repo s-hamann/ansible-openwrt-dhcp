@@ -1,0 +1,21 @@
+---
+- name: 'Remove temporary package cache directory'
+  ansible.builtin.file:
+    path: "{{ _dhcp_opkg_cache.path }}"
+    state: absent
+  when: "_dhcp_opkg_cache.path | default(false) is ansible.builtin.truthy"
+  listen: _dhcp_remove_opkg_cache
+
+- name: 'Restart Dnsmasq'
+  ansible.builtin.service:
+    name: dnsmasq
+    state: "{{ ansible_facts['is_chroot'] | ternary(omit, 'restarted') }}"
+  when: "dhcp_dnsmasq_enabled | bool"
+  listen: _dhcp_restart_dnsmasq
+
+- name: 'Restart odhcpd'
+  ansible.builtin.service:
+    name: odhcpd
+    state: "{{ ansible_facts['is_chroot'] | ternary(omit, 'restarted') }}"
+  when: "dhcp_odhcpd_enabled | bool"
+  listen: _dhcp_restart_odhcpd

@@ -1,0 +1,13 @@
+#jinja2: lstrip_blocks: True
+{{ ansible_managed | comment }}
+{% for key, value in dhcp_dnsmasq_extra_options.items() %}
+  {% if value is boolean and value %}
+{{ key }}
+  {% elif value is sequence and value is not string %}
+    {% for v in value %}
+{{ key }}={{ v }}
+    {% endfor %}
+  {% else %}
+{{ key }}={{ value }}
+  {% endif %}
+{% endfor %}
